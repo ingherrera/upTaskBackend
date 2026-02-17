@@ -1,0 +1,69 @@
+
+@baseUrl = http://localhost:4000/api
+@contentType = application/json
+
+###
+# Limpiar Pantalla del Servidor
+GET {{baseUrl}}/utils/clear-screen
+Accept: {{contentType}}
+
+###
+# Usuario: Pascual
+POST {{baseUrl}}/auth/create-account
+Content-Type: {{contentType}}
+Accept: {{contentType}}
+
+{
+  "name": "Pascual",
+  "password": "password123",
+  "password_confirmation":"password123",
+  "email": "pascual@correo.com"
+}
+
+###
+# Usuario: Sofia
+POST {{baseUrl}}/auth/create-account
+Content-Type: {{contentType}}
+Accept: {{contentType}}
+
+{
+  "name": "Sofia",
+  "password": "password123",
+  "password_confirmation":"password123",
+  "email": "sofia@correo.com"
+}
+###
+# Usuario: Wendy
+POST {{baseUrl}}/auth/create-account
+Content-Type: {{contentType}}
+Accept: {{contentType}}
+
+{
+  "name": "Wendy",
+  "password": "password123",
+  "password_confirmation":"password123",
+  "email": "wendy@correo.com"
+}
+###
+# Usuario: David
+POST {{baseUrl}}/auth/create-account
+Content-Type: {{contentType}}
+Accept: {{contentType}}
+
+{
+  "name": "David",
+  "password": "password123",
+  "password_confirmation":"password123",
+  "email": "david@correo.com"
+}
+
+###
+# Usuario: Wendy
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+Accept: {{contentType}}
+
+{
+  "email": "wendy@correo.com",
+  "password": "password123"
+}
