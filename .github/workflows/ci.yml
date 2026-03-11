@@ -1,17 +1,50 @@
 name: CI
 
+# Se dispara cada vez que haces un 'git push' a cualquier rama
 on: [push]
 
 jobs:
-    build:
-        runs-on: self-hosted
-        steps:
-            - uses: actions/checkout@v3
-            - name: Instalar dependencias
-              run: npm ci
-            - name: Build del proyecto
-              run: npm run build
-            - name: Reiniciar servidor
-              run: |
-                  ln -sfn /var/www/upTaskBackend/actions-runner/_work/upTaskBackend/upTaskBackend/dist /var/www/upTaskBackend/current
-                  pm2 reload ecosystem.config.js
+  build:
+    # Indica que el proceso se ejecutará en el servidor vps(el runner que instale)
+    runs-on: self-hosted
+
+    steps:
+      # 1. Descarga el código de tu repositorio al servidor
+      - name: Checkout del código
+        uses: actions/checkout@v3
+
+      # 2. Configuración del caché para acelerar futuras ejecuciones
+      - name: Cache de Node Modules
+        id: node-cache
+        uses: actions/cache@v3
+        with:
+          # Carpeta que queremos guardar
+          path: node_modules
+
+          #Genera una llave única. Si el package-lock.json cambia, la llave cambia y el caché se invalida
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+          # Si no hay un match exacto, intenta recuperar la versión anterior más cercana
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # 3. Instalación de dependencias (solo si el caché no encontró una coincidencia)
+      - name: Instalar dependencias
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # 4. Transpilar el código (genera la carpeta /dist)
+      - name: Build del proyecto
+        run: npm run build
+
+      # 5. Actualizar el servidor en vivo
+      - name: Reiniciar servidor
+        run: |
+          # Crea o actualiza un enlace simbólico 'current' que apunta a la nueva carpeta dist
+          ln -sfn /var/www/upTaskBackend/actions-runner/_work/upTaskBackend/upTaskBackend/dist /var/www/upTaskBackend/current
+
+          # Entra a la carpeta del despliegue actual
+          cd /var/www/upTaskBackend/current
+
+          # Recarga la aplicación en PM2. Si no existe el proceso, lo inicia.
+          pm2 reload ecosystem.config.js
