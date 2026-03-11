@@ -40,11 +40,12 @@ jobs:
       # 5. Actualizar el servidor en vivo
       - name: Reiniciar servidor
         run: |
-          # Crea o actualiza un enlace simbólico 'current' que apunta a la nueva carpeta dist
-          ln -sfn /var/www/upTaskBackend/actions-runner/_work/upTaskBackend/upTaskBackend/dist /var/www/upTaskBackend/current
+          # 1. Sincronizar el build a la carpeta de producción
+          rsync -avz --delete ${{ github.workspace }}/dist/ /var/www/upTaskBackend/dist/
 
-          # Entra a la carpeta del despliegue actual
-          cd /var/www/upTaskBackend/current
+          # 2. Copiar el archivo de configuración de PM2
+          cp ${{ github.workspace }}/ecosystem.config.js /var/www/upTaskBackend/
 
-          # Recarga la aplicación en PM2. Si no existe el proceso, lo inicia.
-          pm2 reload ecosystem.config.js
+          # 3. Reiniciar PM2 desde la carpeta raíz de la app
+          cd /var/www/upTaskBackend
+          pm2 reload ecosystem.config.js || pm2 start ecosystem.config.js
