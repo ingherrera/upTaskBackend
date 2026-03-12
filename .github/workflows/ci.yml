@@ -8,6 +8,12 @@ jobs:
     # Indica que el proceso se ejecutará en el servidor vps(el runner que instale)
     runs-on: self-hosted
 
+    env:
+      PORT: ${{ secrets.PORT }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
     steps:
       # 1. Descarga el código de tu repositorio al servidor
       - name: Checkout del código
