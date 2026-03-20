@@ -1,0 +1,60 @@
+name: CI
+
+# Se dispara cada vez que haces un 'git push' a cualquier rama
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Indica que el proceso se ejecutará en el servidor vps(el runner que instale)
+    runs-on: self-hosted
+
+    env:
+      PORT: ${{ secrets.PORT }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      # 1. Descarga el código de tu repositorio al servidor
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      # 2. Configuración del caché para acelerar futuras ejecuciones
+      - name: Cache de Node Modules
+        id: node-cache
+        uses: actions/cache@v4
+        with:
+          # Carpeta que queremos guardar
+          path: node_modules
+
+          #Genera una llave única. Si el package-lock.json cambia, la llave cambia y el caché se invalida
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+          # Si no hay un match exacto, intenta recuperar la versión anterior más cercana
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # 3. Instalación de dependencias (solo si el caché no encontró una coincidencia)
+      - name: Instalar dependencias
+        if: steps.node-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # 4. Transpilar el código (genera la carpeta /dist)
+      - name: Build del proyecto
+        run: npm run build
+
+      # 5. Actualizar el servidor en vivo
+      - name: Reiniciar servidor
+        run: |
+          # 1. Sincronizar el build a la carpeta de producción
+          rsync -avz --delete ${{ github.workspace }}/dist/ /var/www/upTaskBackend/dist/
+
+          # 2. Copiar el archivo de configuración de PM2
+          cp ${{ github.workspace }}/ecosystem.config.js /var/www/upTaskBackend/
+
+          # 3. Reiniciar PM2 desde la carpeta raíz de la app
+          cd /var/www/upTaskBackend
+          pm2 reload ecosystem.config.js || pm2 start ecosystem.config.js

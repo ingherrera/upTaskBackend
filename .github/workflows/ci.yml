@@ -1,0 +1,47 @@
+name: Deploy con GitHub Actions
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted # Se ejecuta en tu VPS (Runner ya configurado)
+    steps:
+      - name: 1. Checkout del código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Permite comparar con el commit anterior
+
+      - name: 2. Instalar dependencias (Solo si cambiaron)
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -q 'package.json\|package-lock.json' || [ ! -d "node_modules" ]; then
+            echo "Cambios detectados o node_modules inexistente. Ejecutando npm install..."
+            npm install
+          else
+            echo "Sin cambios en dependencias. Saltando instalación."
+          fi
+
+      - name: 3. Generar cliente Prisma y Compilar
+        run: npm run build
+
+      - name: 4. Crear archivo .env (Seguridad)
+        run: |
+          echo "PORT=4000" > .env
+          echo "DATABASE_URL='${{ secrets.DATABASE_URL }}'" >> .env
+          echo "FRONTEND_URL='${{ secrets.FRONTEND_URL }}'" >> .env
+          echo "JWT_SECRET='${{ secrets.JWT_SECRET }}'" >> .env
+
+      - name: 5. Aplicar Migraciones de Prisma
+        run: npx prisma migrate deploy
+
+      - name: 6. Iniciar o Recargar Aplicación con PM2
+        run: pm2 startOrReload ecosystem.config.js --update-env
+
+      - name: 7. Verificar estado y logs de la App
+        run: |
+          pm2 list
+          echo "--- Últimos Logs de la Aplicación (Salida Estándar) ---"
+          # Usamos tail directamente sobre el archivo para evitar errores de pipe (EPIPE)
+          tail -n 20 /home/cloud/.pm2/logs/uptask-backend-out.log || echo "No se pudo leer el log de salida"
+          echo "--- Últimos Logs de Error ---"
+          tail -n 20 /home/cloud/.pm2/logs/uptask-backend-error.log || echo "No se pudo leer el log de error"

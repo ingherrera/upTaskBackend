@@ -1,0 +1,257 @@
+---
+- name: Configuración de Servicios y Registro de Runner
+  hosts: vps_ubuntu
+  become: yes
+
+  tasks:
+    - name: 0. VALIDACIÓN - Comprobar consistencia de IP
+      ansible.builtin.assert:
+        that:
+          - static_ip == inventory_hostname
+        fail_msg: "¡ERROR DE SEGURIDAD! La IP en all.yml ({{ static_ip }}) no coincide con el servidor del inventario ({{ inventory_hostname }}). Actualiza 'ansible/group_vars/all.yml'."
+
+    - name: 1. Crear usuario de sistema para despliegue
+      ansible.builtin.user:
+        name: "{{ usuario_dev }}"
+        groups: sudo
+        append: yes
+        shell: /bin/bash
+
+    - name: 2. Configurar seguridad de MariaDB (Root)
+      community.mysql.mysql_user:
+        name: root
+        password: "{{ db_root_password }}"
+        login_user: root
+        login_password: "{{ db_root_password }}" # Intenta usar la clave si ya existe
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        check_implicit_admin: yes
+        state: present
+
+    - name: 3. Eliminar usuarios anónimos de MariaDB
+      community.mysql.mysql_user:
+        name: ""
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ db_root_password }}"
+
+    - name: 4. Deshabilitar login remoto para root en MariaDB
+      community.mysql.mysql_user:
+        name: root
+        host: "{{ item }}"
+        state: absent
+        login_user: root
+        login_password: "{{ db_root_password }}"
+      loop:
+        - "{{ ansible_hostname }}"
+        - 127.0.0.1
+        - ::1
+
+    - name: 5. Eliminar base de datos 'test' de MariaDB
+      community.mysql.mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ db_root_password }}"
+
+    - name: 6. Asegurar que MariaDB esté corriendo
+      ansible.builtin.service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: 7. Crear DB de la Aplicación
+      community.mysql.mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        login_user: root
+        login_password: "{{ db_root_password }}"
+
+    - name: 8. Crear y asignar permisos al usuario de la App
+      community.mysql.mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}.*:ALL"
+        state: present
+        host: "localhost"
+        login_user: root
+        login_password: "{{ db_root_password }}"
+
+    - name: 9. Asegurar que Nginx esté corriendo
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+
+    - name: 10. Configurar Nginx (Proxy Inverso)
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/uptask
+        content: |
+          server {
+              listen 80;
+              server_name _;
+              location / {
+                  proxy_pass http://localhost:{{ app_port }};
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+      notify: Reiniciar nginx
+
+    - name: 11. Activar sitio y limpiar Nginx
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/uptask
+        dest: /etc/nginx/sites-enabled/uptask
+        state: link
+      notify: Reiniciar nginx
+
+    - name: 12. Eliminar sitio default de Nginx
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reiniciar nginx
+
+    - name: 13. Despliegue - Asegurar directorio de la App
+      ansible.builtin.file:
+        path: "/var/www/upTaskBackend"
+        state: directory
+        owner: "{{ usuario_dev }}"
+        group: "{{ usuario_dev }}"
+        mode: "0755"
+
+    - name: 14. Despliegue - Clonar repositorio de la App
+      ansible.builtin.git:
+        repo: "https://github.com/ingherrera/upTaskBackend.git"
+        dest: "/var/www/upTaskBackend"
+        version: main
+        force: yes
+      become_user: "{{ usuario_dev }}"
+
+    - name: 15. Despliegue - Instalar dependencias con npm
+      community.general.npm:
+        path: "/var/www/upTaskBackend"
+        production: no
+      become_user: "{{ usuario_dev }}"
+
+    - name: 16. Despliegue - Construir aplicación
+      ansible.builtin.shell: npm run build
+      args:
+        chdir: "/var/www/upTaskBackend"
+      become_user: "{{ usuario_dev }}"
+      tags: build
+
+    - name: 17. Generar archivo .env con Secrets de GitHub
+      ansible.builtin.copy:
+        dest: "/var/www/upTaskBackend/.env"
+        content: |
+          PORT={{ app_port | default('4000') }}
+          DATABASE_URL="{{ app_db_url }}"
+          FRONTEND_URL="{{ app_frontend_url }}"
+          JWT_SECRET="{{ app_jwt_secret }}"
+        owner: "{{ usuario_dev }}"
+        group: "{{ usuario_dev }}"
+        mode: '0600'
+
+    - name: 18. Aplicar migraciones de Prisma
+      ansible.builtin.shell: npx prisma migrate deploy
+      args:
+        chdir: "/var/www/upTaskBackend"
+      become_user: "{{ usuario_dev }}"
+      tags: migrate
+
+    - name: 19. Despliegue - Iniciar o Recargar aplicación con PM2
+      ansible.builtin.shell: |
+        pm2 describe ecosystem.config.js > /dev/null && pm2 reload ecosystem.config.js --update-env || pm2 start ecosystem.config.js --env production
+      args:
+        chdir: "/var/www/upTaskBackend"
+      become_user: "{{ usuario_dev }}"
+      register: pm2_start
+      changed_when: true
+
+    - name: 20. Guardar lista de procesos de PM2
+      ansible.builtin.command: pm2 save
+      become_user: "{{ usuario_dev }}"
+      changed_when: false
+
+    - name: 21. Generar comando de startup de PM2
+      ansible.builtin.command: "pm2 startup systemd -u {{ usuario_dev }} --hp /home/{{ usuario_dev }}"
+      register: pm2_startup_output
+      become_user: "{{ usuario_dev }}"
+      changed_when: false
+      failed_when: false
+      check_mode: no
+
+    - name: 22. Configurar PM2 para que inicie al arrancar el sistema
+      ansible.builtin.shell: "{{ item }}"
+      loop: "{{ pm2_startup_output.stdout_lines | select('search', '^sudo ') | map('regex_replace', '^sudo ', '') | list }}"
+      become: yes
+      when: 
+        - pm2_startup_output.stdout is defined
+        - (pm2_startup_output.stdout_lines | select('search', '^sudo ') | list | length > 0)
+
+    - name: 23. Verificar si el Runner ya está configurado
+      ansible.builtin.stat:
+        path: "/home/{{ usuario_dev }}/actions-runner/.runner"
+      register: runner_config_file
+
+    - name: 24. Registro del Runner en GitHub (vía API)
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ github_user }}/{{ github_repo }}/actions/runners/registration-token"
+        method: POST
+        headers:
+          Authorization: "token {{ github_pat }}"
+          Accept: "application/vnd.github.v3+json"
+        status_code: 201
+      register: registration_token
+      when: not runner_config_file.stat.exists
+
+    - name: 25. Configurar el Runner (Solo si obtuvimos token nuevo)
+      ansible.builtin.shell: |
+        ./config.sh --url https://github.com/{{ github_user }}/{{ github_repo }} \
+                    --token {{ registration_token.json.token }} \
+                    --name {{ runner_name }} \
+                    --unattended --replace
+      args:
+        chdir: "/home/{{ usuario_dev }}/actions-runner"
+      become_user: "{{ usuario_dev }}"
+      when:
+        - not runner_config_file.stat.exists
+        - registration_token.json is defined
+
+    - name: 26. Instalar e Iniciar el Servicio (Como Root)
+      ansible.builtin.shell: |
+        ./svc.sh install {{ usuario_dev }}
+        ./svc.sh start
+      args:
+        chdir: "/home/{{ usuario_dev }}/actions-runner"
+      become: true
+      when:
+        - not runner_config_file.stat.exists
+        - registration_token.json is defined
+
+    - name: 27. Configurar Firewall (UFW)
+      community.general.ufw:
+        rule: allow
+        name: "{{ item }}"
+      loop:
+        - OpenSSH
+        - "Nginx Full"
+
+    - name: 28. Habilitar Firewall con política restrictiva
+      community.general.ufw:
+        state: enabled
+        policy: deny
+
+  handlers:
+    - name: Reiniciar red
+      ansible.builtin.shell: netplan apply
+      become: yes
+
+    - name: Reiniciar nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      become: yes

@@ -1,0 +1,257 @@
+- name: Aprovisionamiento Inicial del Servidor UpTask (Debian 13)
+  hosts: vps_ubuntu
+  become: yes
+
+  vars:
+
+  tasks:
+    # --- SISTEMA BASE ---
+    - name: Actualizar caché de apt e instalar paquetes base
+      apt:
+        name:
+          - openssh-server
+          - sudo
+          - curl
+          - build-essential
+          - ufw
+          - python3-pymysql # Necesario para que Ansible gestione MariaDB
+        state: present
+        update_cache: yes
+
+    - name: Habilitar y arrancar SSH
+      ansible.builtin.service:
+        name: ssh
+        enabled: yes
+        state: started
+
+    - name: Crear usuario de desarrollo
+      user:
+        name: "{{ usuario_dev }}"
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+
+    # --- CONFIGURACIÓN DE RED (IP ESTÁTICA) ---
+    - name: Configurar IP estática con Netplan (Ubuntu)
+      copy:
+        dest: /etc/netplan/01-netcfg.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              enp1s0:  # <--- ¡OJO AQUÍ! Verifica el nombre de tu interfaz
+                dhcp4: no
+                addresses:
+                  - "{{ static_ip }}/24"
+                routes:
+                  - to: default
+                    via: "{{ gateway }}"
+                nameservers:
+                  addresses: [8.8.8.8, 1.1.1.1]
+
+    # --- NODE.JS ---
+    - name: Instalar repositorio de NodeSource (Node 20)
+      shell: curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        UCF_FORCE_CONFOLD: "YES"
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+
+    - name: Instalar Node.js
+      apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Verificar instalación de Node
+      shell: node -v
+      register: node_out
+
+    - name: Mostrar versión
+      debug:
+        msg: "Instalado con éxito: {{ node_out.stdout }}"
+
+    # --- BASE DE DATOS (MariaDB) ---
+    - name: Instalar MariaDB Server y dependencias de Python
+      apt:
+        name:
+          - mariadb-server
+          - python3-pymysql # Necesario para que Ansible gestione MySQL
+        state: present
+
+    - name: Asegurar que MariaDB esté corriendo
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Crear la base de datos para UpTask
+      mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Crear usuario de BD con todos los permisos sobre UpTask
+      mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}.*:ALL"
+        state: present
+        host: "localhost"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    # Asegurar la Instalación de MariaDB
+    # 1. Cambiar/Asegurar la contraseña de root (Equivale a 'Set root password?')
+    - name: Configurar la contraseña de root de MariaDB
+      mysql_user:
+        name: root
+        password: "{{ db_root_password }}"
+        login_user: root
+        login_password: "{{ db_root_password }}" # Intenta usar la clave si ya existe
+        check_implicit_admin: yes # Si falla con la clave, intenta via socket
+      tags: db_secure
+
+    # 2. Eliminar usuarios anónimos (Equivale a 'Remove anonymous users?')
+    - name: Eliminar usuarios anónimos
+      mysql_user:
+        name: ""
+        host_all: yes
+        state: absent
+        login_user: root # <--- Añade esto
+        login_password: "{{ db_root_password }}" # <--- Añade esto
+      tags: db_secure
+
+    # 3. Deshabilitar login remoto de root (Equivale a 'Disallow root login remotely?')
+    - name: Deshabilitar login remoto para el usuario root
+      mysql_user:
+        name: root
+        host: "{{ item }}"
+        state: absent
+        login_user: root
+        login_password: "{{ db_root_password }}"
+      loop:
+        - "{{ ansible_hostname }}"
+        - 127.0.0.1
+        - ::1
+      tags: db_secure
+
+    # 4. Eliminar la base de datos de prueba (Equivale a 'Remove test database?')
+    - name: Eliminar la base de datos 'test'
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root # <--- Añade esto
+        login_password: "{{ db_root_password }}" # <--- Añade esto
+      tags: db_secure
+
+    # --- WEB SERVER (Nginx) ---
+    - name: Instalar Nginx
+      apt:
+        name: nginx
+        state: present
+      tags: nginx
+
+    - name: Asegurar que Nginx esté corriendo y habilitado
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+      tags: nginx
+
+    - name: Configurar Proxy Inverso para UpTask
+      copy:
+        dest: /etc/nginx/sites-available/uptask
+        content: |
+          server {
+              listen 80;
+              server_name _; # Aquí pondrás tu IP o dominio después
+
+              location / {
+                  proxy_pass http://localhost:4000; # El puerto de tu app Node
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+      tags: nginx
+
+    - name: Activar la configuración de UpTask
+      file:
+        src: /etc/nginx/sites-available/uptask
+        dest: /etc/nginx/sites-enabled/uptask
+        state: link
+      tags: nginx
+
+    - name: Eliminar la configuración por defecto de Nginx
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Recargar Nginx
+      tags: nginx
+
+    # --- FIREWALL (UFW) ---
+    - name: Configurar reglas de Firewall (SSH y Web)
+      ufw:
+        rule: allow
+        name: "{{ item }}"
+      loop:
+        - OpenSSH
+        - "Nginx Full" # Esto abre el 80 y el 443 de un solo golpe
+      tags: firewall
+
+    - name: Habilitar el Firewall y denegar todo lo demás
+      ufw:
+        state: enabled
+        policy: deny
+      tags: firewall
+
+    - name: Asegurar que el directorio de la app existe y tiene permisos
+      ansible.builtin.file:
+        path: /var/www/upTaskBackend
+        state: directory
+        owner: "{{ usuario_dev }}"
+        group: "{{ usuario_dev }}"
+        mode: "0755"
+      tags: deploy
+
+    - name: Clonar el repositorio del proyecto
+      ansible.builtin.git:
+        repo: "https://github.com/ingherrera/upTaskBackend.git"
+        dest: /var/www/upTaskBackend
+        version: main
+        force: yes
+      become_user: "{{ usuario_dev }}"
+      tags: deploy
+
+    - name: Instalar dependencias de Node (npm install)
+      community.general.npm:
+        path: /var/www/upTaskBackend
+        production: no
+      become_user: "{{ usuario_dev }}"
+      tags: deploy
+
+    # --- PROCESOS (PM2) ---
+    - name: Instalar PM2 de forma global
+      npm:
+        name: pm2
+        global: yes
+      tags: pm2
+
+  handlers:
+    - name: Reiniciar red
+      ansible.builtin.service:
+        name: networking
+        state: restarted
+
+    - name: Reiniciar nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      become: yes
+      tags: nginx
