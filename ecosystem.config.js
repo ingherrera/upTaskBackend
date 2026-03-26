@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "uptask-backend",
       script: "./dist/index.js",
-      cwd: "./", // Usa el directorio donde se encuentre este archivo
+      cwd: "/var/www/upTaskBackend",
       watch: false,
       time: true,
       env: {

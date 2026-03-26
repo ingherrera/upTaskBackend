@@ -1,10 +1,13 @@
+import dotenv from "dotenv";
+dotenv.config(); // Carga las variables del .env que está en el cwd
+
 import colors from "colors";
 import server from "./server";
 // import https from "https";
 import http from "http";
 // import fs from "fs"
 
-const port = process.env.PORT || 4000;
+const port = process.env.APP_PORT || 4000;
 // const privateKeyPath = process.env.SSL_KEY_PATH;
 // const certificatePath = process.env.SSL_CERT_PATH;
 
