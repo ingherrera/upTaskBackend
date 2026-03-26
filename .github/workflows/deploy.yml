@@ -14,7 +14,7 @@ jobs:
       - name: 🔑 SSH Deploy and .env Creation
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.SERVER_IP }}
+          host: ${{ vars.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
@@ -24,9 +24,9 @@ jobs:
             git pull origin main
 
             # 2. Crear archivo .env desde Secrets de GitHub
-            echo "PORT=${{ secrets.APP_PORT }}" > .env
+            echo "PORT=${{ vars.APP_PORT }}" > .env
             echo "DATABASE_URL=\"${{ secrets.DATABASE_URL }}\"" >> .env
-            echo "FRONTEND_URL=\"${{ secrets.FRONTEND_URL }}\"" >> .env
+            echo "FRONTEND_URL=\"${{ vars.FRONTEND_URL }}\"" >> .env
             echo "JWT_SECRET=\"${{ secrets.JWT_SECRET }}\"" >> .env
 
             # 3. Build y PM2
