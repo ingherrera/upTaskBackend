@@ -1,0 +1,26 @@
+name: Test Runner
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: self-hosted
+
+    steps:
+      - name: Mostrar info del sistema
+        run: |
+          echo "Hola desde el runner 🚀"
+          whoami
+          hostname
+          pwd
+
+      - name: Verificar Node
+        run: node -v
+
+      - name: Verificar PM2
+        run: pm2 -v
+
+      - name: Listar archivos
+        run: ls -la
