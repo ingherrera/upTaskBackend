@@ -29,5 +29,4 @@ http.createServer(options, server).listen(port, () => {
   console.log(colors.bgBlue.white(`Servidor HTTPS`));
   console.log(colors.bgBlue.white(`REST API funcionando en el puerto ${port}`));
   console.log("FRONTEND_URL", process.env.FRONTEND_URL);
-  console.log("FRONTEND_URL1", process.env.FRONTEND_URL1);
 });

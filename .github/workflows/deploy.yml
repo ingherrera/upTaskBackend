@@ -1,0 +1,49 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: /var/www/upTaskBackend
+
+    steps:
+      - name: 14. Clonar repositorio
+        uses: actions/checkout@v4
+        with:
+          path: "/var/www/upTaskBackend"
+
+      - name: 15. Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar librerias y creacion del build
+        run: |
+          npm install
+          npm run build
+
+      - name: 17. Crear archivo .env
+        run: |
+          cat <<EOF > .env
+          PORT=${{ secrets.PORT }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EOF
+
+      - name: 18. Migraciones Prisma
+        run: npx prisma migrate deploy
+
+      - name: 19. Reiniciar app con PM2
+        run: |
+          pm2 describe ecosystem.config.js > /dev/null && \
+          pm2 reload ecosystem.config.js --update-env || \
+          pm2 start ecosystem.config.js --env production
+
+      - name: 20. Guardar procesos PM2
+        run: pm2 save
