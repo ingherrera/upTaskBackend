@@ -37,7 +37,7 @@ jobs:
       # 7. Build
       - name: Build
         run: npm run build
-        working-directory: $APP_DIR
+        working-directory: ${{ env.APP_DIR }}
 
       # 8. Variables de entorno
       - name: Crear .env
