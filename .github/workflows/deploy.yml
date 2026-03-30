@@ -48,19 +48,19 @@ jobs:
           FRONTEND_URL=${{ vars.FRONTEND_URL }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           EOF
-        working-directory: $APP_DIR
+        working-directory: ${{ env.APP_DIR }}
 
       # 9. Migraciones DB
       - name: Prisma migrate
         run: npx prisma migrate deploy
-        working-directory: $APP_DIR
+        working-directory: ${{ env.APP_DIR }}
 
       # 10. Reload app
       - name: PM2 reload
         run: |
           pm2 reload ecosystem.config.js --update-env || \
           pm2 start ecosystem.config.js --env production
-        working-directory: $APP_DIR
+        working-directory: ${{ env.APP_DIR }}
 
       # 11. Guardar estado PM2
       - name: PM2 save
