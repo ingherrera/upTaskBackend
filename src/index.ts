@@ -21,7 +21,7 @@ const options = {
   // cert: fs.readFileSync(certificatePath),
 };
 
-console.log("DATABASE_URL", process.env.DATABASE_URL);
+console.log("Valor para DATABASE_URL", process.env.DATABASE_URL);
 console.log("FRONTEND_URL", process.env.FRONTEND_URL);
 console.log("funcionando el servidor...........");
 
