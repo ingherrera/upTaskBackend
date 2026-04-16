@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
-import dotenv from "dotenv"
-dotenv.config()
+// import dotenv from "dotenv"
+// dotenv.config()
 
 const config = {
   host: process.env.SMTP_HOST,
@@ -10,6 +10,5 @@ const config = {
     pass: process.env.SMTP_PASS,
   },
 };
-
 
 export const transporter = nodemailer.createTransport(config);
