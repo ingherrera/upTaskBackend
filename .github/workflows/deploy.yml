@@ -2,13 +2,13 @@ name: Deploy Backend
 
 on:
   workflow_dispatch: # solo manual
-  push:
-    branches: ["main"]
-    paths:
-      - "src/**" # solo si cambia el backend
-      - "prisma/**"
-      - "package*.json"
-      - "ecosystem.config.js"
+  # push:
+  #   branches: ["main"]
+  #   paths:
+  #     - "src/**" # solo si cambia el backend
+  #     - "prisma/**"
+  #     - "package*.json"
+  #     - "ecosystem.config.js"
 
 jobs:
   deploy:
