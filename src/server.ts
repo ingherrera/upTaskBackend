@@ -15,7 +15,7 @@ app.use(express.json());
 //Rutas
 app.get("/api/", (req: Request, res: Response) => {
   res.json({
-    mensaje: "UpTask API v8 - Despliegue solo cuando decida hacerlo -- ",
+    mensaje: "UpTask API v9 - Despliegue solo cuando decida hacerlo -- ",
   });
 });
 app.use("/api/auth", authRoutes);
