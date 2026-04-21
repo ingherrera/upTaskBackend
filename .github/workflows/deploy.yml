@@ -13,40 +13,31 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    env:
+      APP_DIR: /var/www/upTaskBackend
 
     steps:
-      # 1. Checkout en _work (obligatorio)
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Definir variables
-      - name: Set vars
-        run: echo "APP_DIR=/var/www/upTaskBackend" >> $GITHUB_ENV
-
-      # 3. Crear carpeta si no existe
       - name: Crear directorio
         run: sudo mkdir -p $APP_DIR
 
-      # 4. Permisos correctos
-      - name: Permisos
+      - name: Permisos correctos
         run: sudo chown -R $USER:$USER $APP_DIR
 
-      # 5. Sync código (_work → /var/www)
-      - name: Sync código
+      - name: Sync código (_work → /var/www)
         run: rsync -az --delete ./ $APP_DIR
 
-      # 6. Instalar dependencias
-      - name: npm install
-        run: npm install
+      - name: Instalar dependencias
+        run: npm ci
         working-directory: ${{ env.APP_DIR }}
 
-      # 7. Build
-      - name: Build
-        run: npm run build
-        working-directory: ${{ env.APP_DIR }}
+      # - name: Build
+      # run: npm run build
+      # working-directory: ${{ env.APP_DIR }}
 
-      # 8. Variables de entorno
-      - name: Crear .env
+      - name: Crear variables de entorno - .env
         run: |
           cat <<EOF > .env
           PORT=${{ vars.APP_PORT }}
@@ -56,18 +47,15 @@ jobs:
           EOF
         working-directory: ${{ env.APP_DIR }}
 
-      # 9. Migraciones DB
-      - name: Prisma migrate
+      - name: Migraciones DB
         run: npx prisma migrate deploy
         working-directory: ${{ env.APP_DIR }}
 
-      # 10. Reload app
-      - name: PM2 reload
+      - name: Reload App con PM2
         run: |
           pm2 reload ecosystem.config.js --update-env || \
           pm2 start ecosystem.config.js --env production
         working-directory: ${{ env.APP_DIR }}
 
-      # 11. Guardar estado PM2
-      - name: PM2 save
+      - name: Guardar estado PM2
         run: pm2 save
