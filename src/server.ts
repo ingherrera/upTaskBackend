@@ -3,11 +3,11 @@ import projectRoutes from "./routes/projectRoutes";
 import authRoutes from "./routes/authRoutes";
 import utilsRoutes from "./routes/utilsRoutes";
 
-import cors from "cors";
-import { corsConfig } from "./config/cors";
+// import cors from "cors";
+// import { corsConfig } from "./config/cors";
 
 const app = express();
-app.use(cors(corsConfig));
+// app.use(cors(corsConfig));
 
 // Leer datos de formularios
 app.use(express.json());
