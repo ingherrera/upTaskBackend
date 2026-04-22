@@ -23,8 +23,8 @@ jobs:
       #- name: Crear directorio
       #  run: sudo mkdir -p $APP_DIR
 
-      - name: Permisos correctos
-        run: sudo chown -R $USER:$USER $APP_DIR
+      #- name: Permisos correctos
+      #  run: sudo chown -R $USER:$USER $APP_DIR
 
       - name: Sync código (_work → /var/www)
         run: rsync -az --delete ./ $APP_DIR
